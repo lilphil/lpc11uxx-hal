@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+Cargo.lock
+.gdb_history
+core
+**/*.log
+**/*.o
+**/*.a
+.idea/
+notes.txt

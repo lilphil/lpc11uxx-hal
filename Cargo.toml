@@ -1,0 +1,34 @@
+[package]
+name = "lpc11uxx-hal"
+version = "0.1.0"
+edition = "2018"
+description = "Hardware Abstraction Layer (HAL) for the NXP LPC11Uxx ARM Cortex-M0 microcontrollers"
+repository = "https://github.com/lilphil/lpc11uxx-hal"
+license = "Apache-2.0 OR MIT"
+readme = "README.md"
+keywords = ["no-std", "cortex-m", "nxp", "lpc", "embedded-hal-impl"]
+categories = ["embedded", "no-std"]
+authors = [
+    "Nicolas Stalder <n@stalder.io>",
+    "Conor Patrick <conorpp94@gmail.com>",
+    "Hanno Braun <hanno@braun-robotics.com>",
+]
+build = "build.rs"
+
+[package.metadata.docs.rs]
+targets = []
+
+[dependencies]
+cortex-m = "0.6"
+embedded-hal = "1.0.0"
+lpc11uxx = "0.3.0"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = true
+opt-level = "z"
+panic = "abort"
