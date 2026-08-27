@@ -16,6 +16,10 @@ Implemented and usable:
 - USART0 serial (`embedded-hal-nb`, Steam Controller baud preset)
 - USB clock / USBRAM enable helpers for use with `lpc11uxx-usbd`
 - CT16B1 PWM (match channels MAT0–MAT3)
+- ADC (power/clock, channel select, burst, polled averaged samples)
+- SSP0 SPI master (blocking, `embedded-hal` SpiBus, Steam Controller 6 MHz Mode 1 preset)
+- CT32B0 match-interrupt timer (1 µs tick)
+- PINT (pin-interrupt select, rising/falling, clear)
 
 Board-specific pin mux, memory layouts, and examples live in application crates.
 

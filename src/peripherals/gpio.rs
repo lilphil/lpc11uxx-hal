@@ -41,6 +41,27 @@ impl Gpio<init_state::Enabled> {
         self.raw.dir[port].modify(|r, w| unsafe { w.bits(r.bits() | mask) });
     }
 
+    /// Configure a pin as a high-impedance input (clear DIR bit).
+    pub fn make_input(&self, port: usize, pin: u8) {
+        assert!(port <= 1);
+        assert!(pin < 32);
+        let mask = 1u32 << pin;
+        self.raw
+            .dir[port]
+            .modify(|r, w| unsafe { w.bits(r.bits() & !mask) });
+    }
+
+    pub fn is_high(&self, port: usize, pin: u8) -> bool {
+        assert!(port <= 1);
+        assert!(pin < 32);
+        let mask = 1u32 << pin;
+        self.raw.pin[port].read().bits() & mask != 0
+    }
+
+    pub fn is_low(&self, port: usize, pin: u8) -> bool {
+        !self.is_high(port, pin)
+    }
+
     pub fn set_high(&self, port: usize, pin: u8) {
         let mask = 1u32 << pin;
         self.raw.set[port].write(|w| unsafe { w.bits(mask) });
@@ -52,11 +73,50 @@ impl Gpio<init_state::Enabled> {
     }
 
     pub fn toggle(&self, port: usize, pin: u8) {
-        let mask = 1u32 << pin;
-        if self.raw.pin[port].read().bits() & mask != 0 {
+        if self.is_high(port, pin) {
             self.set_low(port, pin);
         } else {
             self.set_high(port, pin);
         }
     }
+}
+
+/// Free functions for apps that hold a PAC `&GPIO_PORT` (same DIR/PIN rules).
+pub fn make_input(gpio: &raw::GPIO_PORT, port: usize, pin: u8) {
+    assert!(port <= 1);
+    assert!(pin < 32);
+    let mask = 1u32 << pin;
+    gpio.dir[port].modify(|r, w| unsafe { w.bits(r.bits() & !mask) });
+}
+
+pub fn make_output(gpio: &raw::GPIO_PORT, port: usize, pin: u8) {
+    assert!(port <= 1);
+    assert!(pin < 32);
+    let mask = 1u32 << pin;
+    gpio.dir[port].modify(|r, w| unsafe { w.bits(r.bits() | mask) });
+}
+
+pub fn is_high(gpio: &raw::GPIO_PORT, port: usize, pin: u8) -> bool {
+    assert!(port <= 1);
+    assert!(pin < 32);
+    let mask = 1u32 << pin;
+    gpio.pin[port].read().bits() & mask != 0
+}
+
+pub fn is_low(gpio: &raw::GPIO_PORT, port: usize, pin: u8) -> bool {
+    !is_high(gpio, port, pin)
+}
+
+pub fn set_high(gpio: &raw::GPIO_PORT, port: usize, pin: u8) {
+    assert!(port <= 1);
+    assert!(pin < 32);
+    let mask = 1u32 << pin;
+    gpio.set[port].write(|w| unsafe { w.bits(mask) });
+}
+
+pub fn set_low(gpio: &raw::GPIO_PORT, port: usize, pin: u8) {
+    assert!(port <= 1);
+    assert!(pin < 32);
+    let mask = 1u32 << pin;
+    gpio.clr[port].write(|w| unsafe { w.bits(mask) });
 }

@@ -105,15 +105,18 @@ impl PinConfig {
     }
 
     /// Pack into the 32-bit IOCON register value.
+    ///
+    /// Bit 7 is reserved-as-1 on most LPC11Uxx pins (and DIGIMODE on ADC pins).
+    /// Stock Valve firmware always ORs `0x80`; clearing it breaks some pins
+    /// (notably PIO1_21 right-pad click / MISO1).
     pub const fn bits(self) -> u32 {
         let mut v = (self.func as u32) & 0x7;
         v |= (self.mode as u32) << 3;
         if self.hys {
             v |= 1 << 5;
         }
-        if self.digimode {
-            v |= 1 << 7;
-        }
+        // Always set bit 7 (DIGIMODE / reserved-1).
+        v |= 1 << 7;
         v
     }
 }
