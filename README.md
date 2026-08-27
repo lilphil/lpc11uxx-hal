@@ -11,7 +11,10 @@ Implemented and usable:
 - System clock setup (12 MHz crystal → 48 MHz PLL) and clock helpers
 - SysTick and busy-loop delays
 - GPIO (direction, set/clear/toggle)
-- IOCON and SYSCON wrappers
+- IOCON wrappers and raw `(port, pin)` FUNC/MODE/HYS/DIGIMODE helpers
+- SYSCON wrappers
+- USART0 serial (`embedded-hal-nb`, Steam Controller baud preset)
+- USB clock / USBRAM enable helpers for use with `lpc11uxx-usbd`
 - CT16B1 PWM (match channels MAT0–MAT3)
 
 Board-specific pin mux, memory layouts, and examples live in application crates.

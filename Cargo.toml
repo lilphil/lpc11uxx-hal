@@ -21,7 +21,9 @@ targets = []
 [dependencies]
 cortex-m = "0.6"
 embedded-hal = "1.0.0"
+embedded-hal-nb = "1.0.0"
 lpc11uxx = "0.3.0"
+nb = "1.1"
 
 [profile.dev]
 panic = "abort"

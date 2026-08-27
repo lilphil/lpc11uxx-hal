@@ -2,7 +2,7 @@
 
 //! Hardware Abstraction Layer for NXP LPC11Uxx (Cortex-M0) microcontrollers.
 //!
-//! Provides clock setup, GPIO, IOCON, SYSCON, CT16B1 PWM, and SysTick delays.
+//! Provides clock setup, GPIO, IOCON, SYSCON, USART0, USB clock enable, CT16B1 PWM, and SysTick delays.
 
 pub extern crate lpc11uxx as raw;
 
@@ -11,15 +11,19 @@ pub mod delay;
 pub mod macros;
 pub mod prelude;
 pub mod pwm;
+pub mod serial;
 pub mod time;
 pub mod traits;
 pub mod typestates;
+pub mod usb;
 
 pub use typestates::init_state::Enabled;
 
 pub mod peripherals;
 pub use peripherals::{ct16b1::Ct16b1, gpio::Gpio, iocon::Iocon, syscon::Syscon};
+pub use peripherals::iocon::{configure as iocon_configure, Mode as IoconMode, PinConfig};
 pub use pwm::{Pwm, PwmChannel, PwmConfig};
+pub use serial::{Config as SerialConfig, Error as SerialError, Rx as SerialRx, Serial, Tx as SerialTx};
 
 pub fn new() -> Peripherals {
     take().unwrap()
