@@ -1,9 +1,14 @@
 //! USART0 serial driver (blocking + `embedded-hal-nb`).
 //!
 //! Pin mux (e.g. PIO1_17 RXD / PIO1_18 TXD) stays in the board crate via IOCON
-//! helpers. NVIC priority and interrupt enabling are left to the application;
-//! use [`Serial::enable_rx_interrupts`] / [`Serial::disable_rx_interrupts`] for
-//! the peripheral-side IER bits.
+//! helpers. NVIC priority and interrupt enabling are left to the application.
+//!
+//! For an RX ISR use [`Serial::enable_rbr_interrupt`] (RBR + character-timeout
+//! only — **never RLS**: `LSR.BI` on a post-reset RXD break re-asserts the RLS
+//! interrupt the instant it is cleared and livelocks the handler). Read bytes in
+//! the ISR with [`Serial::read_raw`], which — unlike [`Serial::read`] — keeps the
+//! data byte on an LSR error flag instead of discarding it, so the caller can
+//! count OE/PE/FE/BI separately.
 
 use core::fmt;
 
@@ -57,6 +62,17 @@ impl Default for Config {
     fn default() -> Self {
         Self::steam_controller()
     }
+}
+
+/// RX FIFO trigger level (`FCR.RXTL`). The RX interrupt (and `read`) fire once
+/// the FIFO holds at least this many characters; the character-timeout interrupt
+/// covers a shorter tail. Stock uses [`RxTrigger::Chars8`] (`FCR = 0x87`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxTrigger {
+    Chars1,
+    Chars4,
+    Chars8,
+    Chars14,
 }
 
 /// Serial error.
@@ -123,14 +139,69 @@ impl<'a> Serial<'a> {
         self.usart
     }
 
-    /// Enable RBR and RLS interrupts in IER. Does not touch NVIC.
-    pub fn enable_rx_interrupts(&self) {
-        enable_rx_interrupts(self.usart);
+    /// Enable the RBR (receive-data-available) interrupt in IER. Implies the
+    /// character-timeout interrupt. Does **not** enable RLS and does not touch
+    /// NVIC.
+    pub fn enable_rbr_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rbrinten().enable_the_rda_inter());
     }
 
-    /// Disable RBR and RLS interrupts in IER.
-    pub fn disable_rx_interrupts(&self) {
-        disable_rx_interrupts(self.usart);
+    /// Disable the RBR interrupt in IER.
+    pub fn disable_rbr_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rbrinten().disable_the_rda_inte());
+    }
+
+    /// Enable the RLS (receive-line-status: OE/PE/FE/BI) interrupt in IER.
+    /// Available for completeness; the Steam Controller RX ISR deliberately does
+    /// not use it (see the module docs).
+    pub fn enable_rls_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rlsinten().enable_the_rls_inter());
+    }
+
+    /// Disable the RLS interrupt in IER.
+    pub fn disable_rls_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rlsinten().disable_the_rls_inte());
+    }
+
+    /// Set the RX FIFO trigger level. Writes the full write-only `FCR`
+    /// (`FIFOEN | RXFIFORES | RXTL`), since `FCR` aliases `IIR` and cannot be
+    /// read-modified.
+    pub fn set_rx_trigger(&self, level: RxTrigger) {
+        write_fcr(self.usart, level);
+    }
+
+    /// Reset (flush) the RX FIFO, keeping FIFOs enabled at the 8-char trigger.
+    pub fn reset_rx_fifo(&self) {
+        fcr(self.usart).write(|w| {
+            w.fifoen()
+                .enabled()
+                .rxfifores()
+                .clear()
+                .rxtl()
+                .level2()
+        });
+    }
+
+    /// Read `LSR` once (which clears the sticky OE/PE/FE/BI flags) and return the
+    /// raw register value so the caller can inspect the error bits.
+    pub fn clear_rx_status(&self) -> u32 {
+        self.usart.lsr.read().bits()
+    }
+
+    /// `LSR.RDR` — at least one byte is waiting in the RX FIFO.
+    pub fn rx_data_ready(&self) -> bool {
+        self.usart.lsr.read().rdr().is_valid()
+    }
+
+    /// Pop one byte from the RX FIFO if present, **without** discarding it on an
+    /// LSR error flag (unlike [`Self::read`]). Returns `None` when the FIFO is
+    /// empty. Intended for the RX ISR.
+    pub fn read_raw(&mut self) -> Option<u8> {
+        if self.usart.lsr.read().rdr().is_valid() {
+            Some(self.usart.rbr.read().rbr().bits())
+        } else {
+            None
+        }
     }
 
     /// Enable THRE interrupt in IER (for IRQ-driven TX). Does not touch NVIC.
@@ -192,12 +263,24 @@ impl<'a> Rx<'a> {
         nb::block!(read_byte(self.usart))
     }
 
-    pub fn enable_rx_interrupts(&self) {
-        enable_rx_interrupts(self.usart);
+    /// Enable the RBR interrupt in IER (RBR + character-timeout, no RLS).
+    pub fn enable_rbr_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rbrinten().enable_the_rda_inter());
     }
 
-    pub fn disable_rx_interrupts(&self) {
-        disable_rx_interrupts(self.usart);
+    /// Disable the RBR interrupt in IER.
+    pub fn disable_rbr_interrupt(&self) {
+        ier(self.usart).modify(|_, w| w.rbrinten().disable_the_rda_inte());
+    }
+
+    /// Pop one byte from the RX FIFO without error filtering (see
+    /// [`Serial::read_raw`]).
+    pub fn read_raw(&mut self) -> Option<u8> {
+        if self.usart.lsr.read().rdr().is_valid() {
+            Some(self.usart.rbr.read().rbr().bits())
+        } else {
+            None
+        }
     }
 }
 
@@ -297,21 +380,15 @@ fn set_baud(usart: &USART, config: Config) {
     usart.lcr.modify(|_, w| w.dlab().disable_access_to_di());
 }
 
-fn enable_rx_interrupts(usart: &USART) {
-    ier(usart).modify(|_, w| {
-        w.rbrinten()
-            .enable_the_rda_inter()
-            .rlsinten()
-            .enable_the_rls_inter()
-    });
-}
-
-fn disable_rx_interrupts(usart: &USART) {
-    ier(usart).modify(|_, w| {
-        w.rbrinten()
-            .disable_the_rda_inte()
-            .rlsinten()
-            .disable_the_rls_inte()
+fn write_fcr(usart: &USART, level: RxTrigger) {
+    fcr(usart).write(|w| {
+        let w = w.fifoen().enabled().rxfifores().clear();
+        match level {
+            RxTrigger::Chars1 => w.rxtl().level0(),
+            RxTrigger::Chars4 => w.rxtl().level1(),
+            RxTrigger::Chars8 => w.rxtl().level2(),
+            RxTrigger::Chars14 => w.rxtl().level3(),
+        }
     });
 }
 
