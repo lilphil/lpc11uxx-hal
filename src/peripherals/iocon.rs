@@ -79,13 +79,17 @@ pub struct PinConfig {
 }
 
 impl PinConfig {
-    /// `FUNC = func`, inactive pulls, hysteresis off, digital mode off.
+    /// `FUNC = func`, inactive pulls, hysteresis off, digital mode on.
+    ///
+    /// `digimode: true` is the right default: on ADC-capable pins bit 7 is
+    /// `ADMODE` (1 = digital, the reset state) and on every other pin bit 7 is
+    /// reserved-as-1. Only analog inputs opt out with `.digimode(false)`.
     pub const fn func(func: u8) -> Self {
         Self {
             func,
             mode: Mode::Inactive,
             hys: false,
-            digimode: false,
+            digimode: true,
         }
     }
 
@@ -106,17 +110,22 @@ impl PinConfig {
 
     /// Pack into the 32-bit IOCON register value.
     ///
-    /// Bit 7 is reserved-as-1 on most LPC11Uxx pins (and DIGIMODE on ADC pins).
-    /// Stock Valve firmware always ORs `0x80`; clearing it breaks some pins
-    /// (notably PIO1_21 right-pad click / MISO1).
+    /// Bit 7 is `ADMODE` on ADC-capable pins (PIO0_11/12/13/14/16/22/23,
+    /// PIO1_31, and the JTAG pins) — `0` selects analog input, `1` (the reset
+    /// state) selects digital — and reserved-as-1 on every other pin. Stock
+    /// Valve firmware always ORs `0x80` on digital pins, and clearing it breaks
+    /// some of them (notably PIO1_21 right-pad click / MISO1), so [`Self::func`]
+    /// defaults `digimode` to `true`. An analog input must set `.digimode(false)`
+    /// or the ADC reads a rail instead of the pin (sticks / triggers dead).
     pub const fn bits(self) -> u32 {
         let mut v = (self.func as u32) & 0x7;
         v |= (self.mode as u32) << 3;
         if self.hys {
             v |= 1 << 5;
         }
-        // Always set bit 7 (DIGIMODE / reserved-1).
-        v |= 1 << 7;
+        if self.digimode {
+            v |= 1 << 7;
+        }
         v
     }
 }
